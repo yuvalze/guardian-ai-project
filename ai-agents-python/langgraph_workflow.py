@@ -11,10 +11,24 @@ class BatchSecurityState(TypedDict):
     results: List[dict]
     status: str
 
+# 2. State key constants
+STATE_KEYS = {
+    'LOGS_TO_PROCESS': 'logs_to_process',
+    'RESULTS': 'results',
+    'STATUS': 'status'
+}
+
+# 3. Status constants
+STATUS_VALUES = {
+    'COMPLETED': 'completed',
+    'ERROR': 'error',
+    'ALL_FILTERED': 'all_filtered'
+}
+
 # 2. Initialize Model
 llm = ChatOllama(
-    model="llama3", 
-    temperature=0.1, 
+    model="llama3.2:1b", 
+    temperature=0, 
     format="json",
     keep_alive="1h"
 )
@@ -49,14 +63,13 @@ def batch_analyzer_node(state: BatchSecurityState) -> BatchSecurityState:
     logs_input = "\n".join([f"ID {i}: {log}" for i, log in enumerate(needs_ai)])
     
     prompt = f"""
-    Analyze these security logs. Return a JSON list of objects. 
-    Each object must have "log_id", "event_type", "risk_score" (1-10), and "recommended_action".
-    
-    Logs:
+    Analyze these security logs. Return a JSON list.
+    Example Format: [{{"log_id": 0, "event_type": "SQL_INJECTION", "risk_score": 10, "recommended_action": "BLOCK_IP"}}]
+
+    Logs to analyze:
     {logs_input}
     
-    Return ONLY a JSON list: [{{...}}]
-    """
+    Return ONLY the JSON list:"""
     
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -89,7 +102,7 @@ def batch_analyzer_node(state: BatchSecurityState) -> BatchSecurityState:
             
         state.update({"results": results, "status": "completed"})
     except Exception as e:
-        state.update({"status": f"error: {str(e)}", "results": results})
+        state.update({STATE_KEYS['STATUS']: f"{STATUS_VALUES['ERROR']}: {str(e)}", STATE_KEYS['RESULTS']: results})
     
     return state
 
@@ -104,12 +117,31 @@ if __name__ == "__main__":
     test_batch = [
         "User admin successfully logged in from 10.0.0.5",
         "Failed password for user root from 192.168.1.100",
-         "SELECT * FROM users; DROP TABLE users; --"
+        "SELECT * FROM users; DROP TABLE users; --"
     ]
     
     print(f"🚀 Analyzing {len(test_batch)} logs...")
-    output = app.invoke({"logs_to_process": test_batch, "results": [], "status": ""})
+    output = app.invoke({
+    STATE_KEYS['LOGS_TO_PROCESS']: test_batch, 
+    STATE_KEYS['RESULTS']: [], 
+    STATE_KEYS['STATUS']: ""
+})
     
-    for r in output['results']:
-        print(f"\nLog: {r['log']}")
-        print(f"Result: {r['event_type']} | Risk: {r['risk_score']}/10 | Action: {r['recommended_action']} | Logic: {r['method']}")
+    # Check for errors first
+    has_error = output.get(STATE_KEYS['STATUS']) and STATUS_VALUES['ERROR'] in output[STATE_KEYS['STATUS']]
+    
+    # Get processed logs
+    processed_logs = {r['log']: r for r in output[STATE_KEYS['RESULTS']]}
+    
+    # Show all logs with their results or error
+    for log in test_batch:
+        print(f"\nLog: {log}")
+        if log in processed_logs:
+            r = processed_logs[log]
+            print(f"Result: {r['event_type']} | Risk: {r['risk_score']}/10 | Action: {r['recommended_action']} | Logic: {r['method']}")
+        elif has_error:
+            print(f"Result: ❌ Error: {output[STATE_KEYS['STATUS']]}")
+        else:
+            print(f"Result: Not processed")
+    
+    print(f"\nStatus: {output.get('status', 'unknown')}")
