@@ -1,0 +1,43 @@
+# Database configuration with credentials
+backend-java/src/main/resources/application.properties
+
+# Python virtual environment
+venv/
+ai-agents-python/__pycache__/
+ai-agents-python/*.pyc
+
+# Java build files
+backend-java/target/
+backend-java/.mvn/
+backend-java/mvnw
+backend-java/mvnw.cmd
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Security - sensitive files
+*.key
+*.pem
+*.p12
+*.jks
+*.pfx
+secrets/
+.env
+.env.local
+
+# Logs and backups
+*.log
+*.bak
+*.backup
+*~
+
+# Temporary files
+*.tmp
+*.temp
