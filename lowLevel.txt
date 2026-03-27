@@ -1,0 +1,66 @@
+This Low-Level Design (LLD) provides the technical blueprint for the GuardianAI ecosystem, detailing how each component interacts to transform raw logs into autonomous security responses.
+1. System Architecture Overview
+The system follows an Event-Driven Architecture (EDA).
+Data Source: System Log Files (e.g., /var/log/auth.log).
+Producer: Java Spring Boot (Log Monitoring & Persistence).
+Processor: Python LangGraph (AI Reasoning with Ollama).
+Consumers: React Dashboard (Live Feed) & React Native (Mobile Alerts).
+2. Component Design (Module Level)
+A. Backend (Java Spring Boot)
+LogWatcherService: A background thread using java.nio.file.WatchService. It monitors log directories and uses RandomAccessFile to "tail" new lines.
+LogParser: Uses Regex to map raw strings to the SecurityEvent entity (extracting sourceIp, eventType, etc.).
+AIAgentClient: A Spring WebClient (non-blocking) that sends JSON payloads to the Python FastAPI.
+NotificationService: Integrates with Firebase Cloud Messaging (FCM) for mobile push and SimpMessagingTemplate for Dashboard WebSockets.
+B. AI Engine (Python + LangGraph)
+FastAPI Wrapper: Entry point for the Backend to submit events for analysis.
+LangGraph Workflow:
+Node 1 (Classifier): Calls Ollama (Llama 3) to categorize the log (e.g., "SQL Injection", "Brute Force").
+Node 2 (Scorer): Calculates a risk_score (1-10) based on event frequency and severity.
+Node 3 (Responder): Generates a human-readable ai_summary and a recommended_action (e.g., "BLOCK_IP").
+Local LLM (Ollama): Runs Llama 3 locally via API calls from LangChain.
+C. Frontend & Mobile (React/React Native)
+SocketClient: Connects to the Spring Boot WebSocket endpoint to receive live threat updates without refreshing.
+ResponseController: Sends PATCH requests to the Backend to execute actions (e.g., status = "BLOCKED").
+3. Data Flow Sequence
+Ingestion: LogWatcherService detects a new line 
+ LogParser creates a SecurityEvent.
+Save: SecurityEventRepository saves the record to PostgreSQL with status = "PENDING".
+Inference: Java calls Python POST /analyze.
+Reasoning: LangGraph uses Ollama to analyze the threat.
+Synchronization: Python returns JSON 
+ Java updates the DB record with ai_summary and risk_score.
+Alerting: Java pushes the updated record to the Dashboard (WebSocket) and Mobile App (FCM).
+Mitigation: User taps "Block" on Mobile 
+ Backend updates firewall and sets status = "RESOLVED".
+4. Class & Contract Definitions
+Updated Database Schema (PostgreSQL):
+Add these fields to your existing table:
+ai_summary: TEXT
+risk_score: INTEGER
+recommended_action: VARCHAR(50)
+API Contract (Java 
+ Python):
+json
+// Request to Python
+{
+  "id": 123,
+  "sourceIp": "192.168.1.10",
+  "eventType": "FAILED_LOGIN",
+  "timestamp": "2023-10-27T10:00:00"
+}
+
+// Response to Java
+{
+  "risk_score": 8,
+  "summary": "High-frequency failed logins from external IP. Pattern matches Brute Force.",
+  "action": "BLOCK_IP"
+}
+
+
+5. Implementation Roadmap
+Backend: Implement the WatchService and WebClient.
+AI: Set up the FastAPI server with LangGraph calling Ollama.
+Frontend: Build the real-time table in React using WebSockets.
+Mobile: Configure Expo Notifications for the rapid response alerts.
+
+
