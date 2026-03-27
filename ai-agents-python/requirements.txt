@@ -1,20 +1,14 @@
-# GuardianAI Python Agent Dependencies
-# Core LangGraph and LangChain packages
+# GuardianAI Core
 langgraph>=1.1.0
-langchain-core>=1.2.0
-langchain-ollama>=1.0.0
+langchain-core>=0.3.0
+langchain-ollama>=0.2.0
 
-# Data validation and parsing
+# Configuration & Data
 pydantic>=2.0.0
-
-# JSON handling
+pyyaml>=6.0.1      # Fixes build bugs and security issues in 6.0
 jsonschema>=4.0.0
 
-# Optional: Enhanced error handling and retry logic
-tenacity>=8.0.0
-
-# Optional: Performance monitoring (if needed)
-psutil>=5.9.0
-
-# Optional: Configuration management
-pyyaml>=6.0
+# API & Reliability
+fastapi
+uvicorn
+tenacity>=8.0.0    # For LLM retries
