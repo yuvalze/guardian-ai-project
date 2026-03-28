@@ -68,12 +68,22 @@ def fast_filter(logs: List[str]):
 
 # --- 5. LangGraph Node: AI Analyzer ---
 def batch_analyzer_node(state: BatchSecurityState) -> BatchSecurityState:
+    # 1. Separate safe logs (Fast Filter) from suspicious logs
     needs_ai, results = fast_filter(state['logs_to_process'])
     
+    # If everything was filtered out by the Fast Filter, exit early
     if not needs_ai:
         return {"results": results, "status": "all_filtered", "logs_to_process": state['logs_to_process']}
 
-    # 1. Define the System Prompt (The Rules)
+    # 2. Create the Safety Map (Python's internal memory)
+    # This maps the ID to the original log text so we can find it later
+    needs_ai_map = {item['id']: item['text'] for item in needs_ai}
+    
+    # 3. Create the logs_input string (The exam paper for the AI)
+    # We use the map to build this to ensure the IDs match perfectly
+    logs_input = "\n".join([f"ID {k}: {v}" for k,v in needs_ai_map.items()])
+
+    # 4. Define the Prompts
     system_prompt = SystemMessage(content=(
         "You are an expert Cyber Security Analyst. "
         "Your task is to analyze system logs for threats like SQL Injection, Brute Force, or Unauthorized Access. "
@@ -81,31 +91,35 @@ def batch_analyzer_node(state: BatchSecurityState) -> BatchSecurityState:
         "Assign a risk_score from 1 (Low) to 10 (Critical) and recommend an action: BLOCK_IP, MONITOR, or ALLOW."
     ))        
     
-    # 2. Define the User Prompt (The Data)
-    logs_input = "\n".join([f"ID {item['id']}: {item['text']}" for item in needs_ai])
-    user_prompt = HumanMessage(content=f"Analyze these logs:\n{logs_input}")
+    # We explicitly tell the AI which IDs it is allowed to use
+    allowed_ids = list(needs_ai_map.keys())
+    user_prompt = HumanMessage(content=(
+        f"Analyze these logs. ONLY use these IDs {allowed_ids}:\n"
+        f"{logs_input}"
+    ))
 
     try:
-        # Pass BOTH messages as a list
+        # 5. Run the AI Inference
         ai_response = llm.invoke([system_prompt, user_prompt])
         
-        # Map AI results back to original logs using the IDs
-        needs_ai_dict = {item['id']: item['text'] for item in needs_ai}
-        
+        # 6. Match AI results back to original text using the Safety Map
         for analysis in ai_response.analyses:
-            if analysis.log_id in needs_ai_dict:
-                results.append({
-                    "log": needs_ai_dict[analysis.log_id],
-                    "event_type": analysis.event_type,
-                    "risk_score": analysis.risk_score,
-                    "recommended_action": analysis.recommended_action,
-                    "reasoning": analysis.reasoning, # Add this line
-                    "method": "llama3.2_batch"
-                })
+            # We use .get() to prevent crashes if the AI hallucinated an invalid ID
+            log_text = needs_ai_map.get(analysis.log_id, "Unknown/Hallucinated ID")
+            
+            results.append({
+                "log": log_text,
+                "event_type": analysis.event_type,
+                "risk_score": analysis.risk_score,
+                "recommended_action": analysis.recommended_action,
+                "reasoning": analysis.reasoning,
+                "method": "llama3.2_batch"
+            })
         
         return {"results": results, "status": "completed", "logs_to_process": state['logs_to_process']}
     
     except Exception as e:
+        # If the LLM fails, we return the results from the Fast Filter + the error status
         return {"results": results, "status": f"error: {str(e)}", "logs_to_process": state['logs_to_process']}
 
 # --- 6. Build the Graph ---
